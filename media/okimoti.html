@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/vue@2.6.11"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.3/Chart.min.js"></script>
+  <script src="https://unpkg.com/vue-chartjs/dist/vue-chartjs.min.js"></script>
+  <link href="https://use.fontawesome.com/releases/v5.6.1/css/all.css" rel="stylesheet">
+  <title>++OKIMOTI</title>
+</head>
+<style>
+  body {
+    margin: 0;
+  }
+  .header {
+    display: flex;
+    position: fixed;
+    z-index: 999;
+    width: 100%;
+    padding: 15px 0;
+    background-color: #1abc9c;
+    text-align: center;
+    color: white;
+    font-size: 30px;
+    box-shadow: 4px 4px 7px #ccc;
+  }
+  .header h1 {
+    margin: 0 0 0 15px;
+    text-align: left;
+    font-size: 35px;
+  }
+  button {
+    padding: 5px;
+    margin: 0 15px 0 auto;
+    background-color: transparent;
+    color: white;
+    border: none;
+    transition: .5s;
+  }
+  button:focus {
+    outline: 0;
+  }
+  .fade-enter-active,
+  .fade-leave-active {
+    transition: opacity .15s;
+  }
+  .fade-enter,
+  .fade-leave-to {
+    opacity: 0;
+  }
+  .container {
+    padding-top: 100px;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .box {
+    width: 500px;
+    height: 270px;
+    padding: 20px;
+    margin: 20px auto;
+    background: #fff;
+    border-radius: 5px;
+    box-shadow: 3px 3px 6px #ccc;
+    transition: all .3s;
+  }
+  .box:hover {
+    box-shadow: 4px 9px 12px #ccc;
+  }
+  .box>ul {
+    list-style-type: none;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 0;
+  }
+  .table {
+    width: 42%;
+    margin: 20px 20px;
+  }
+  .table span {
+    margin: 0;
+    padding: 0;
+    transition: .5s;
+  }
+  .type {
+    font-size: 28px;
+  }
+  .value {
+    font-size: 34px;
+  }
+</style>
+
+<body>
+  <div id="iyaa">
+    <div id="header" class="header">
+      <h1>++OKIMOTI</h1>
+      <transition name="fade" mode="out-in">
+        <button key="pause" v-if="isMeasure" @click="downloadXMLFile"><i class="fas fa-pause fa-2x"></i></button>
+        <button key="play" v-else @click="onClick"><i class="fas fa-play fa-2x"></i></button>
+      </transition>
+    </div>
+    <div class="container">
+      <div v-for="content in contents" :key="content" class="box">
+        <ul v-if="content === 'table'">
+          <template v-for="id in tableOrder" :key="id">
+            <li class="table">
+              <div v-if="id === 'classification'">
+                <span class="type"><span :style="{color: emotions[latestValue[id].emotion].color, fontWeight: 'bold'}">
+                    <i :class="emotions[latestValue[id].emotion].icon"></i>
+                    <span>{{latestValue[id].emotion}}</span>
+                  </span></span>
+                <span>({{latestValue[id].strength}})</span>
+              </div>
+              <div v-else>
+                <span class="type"><span :style="{color: colors[id]}">{{id}}</span>:</span>
+                <span class="value">{{latestValue[id]}}</span>
+              </div>
+            </li>
+          </template>
+        </ul>
+        <canvas v-else :id="content"></canvas>
+      </div>
+    </div>
+  </div>
+</body>
+<script>
+  // attention / meditetion = EEG
+  // attention, meditetion, pNN = 0 ~ 100
+  // BPN = 50 ~ 100
+  const MAX_VARTEX = 50; // 描画するグラフの頂点の最大数
+  const FILE_NAME = "result.xml" // xmlファイルの名前
+  const COLORS = {       // 指定色
+    attention: "#FF82A9",
+    meditation: "#515bd4",
+    pNN: "#feda77",
+    BPM: "#8134af",
+    EEG: "#62C8A5"
+  }
+  const EMOTIONS = {
+    "happy": {
+      "color": "#DD6882",
+      "icon": "fas fa-smile-beam"
+    },
+    "relax": {
+      "color": "#68B60D",
+      "icon": "fas fa-grin"
+    },
+    "anger": {
+      "color": "#D04E5B",
+      "icon": "fas fa-angry"
+    },
+    "sadness": {
+      "color": "#4E75B6",
+      "icon": "fas fa-sad-tear"
+    },
+  }
+
+  const okimoti = new Vue({
+    el: '#iyaa',
+    data: {
+      maxVartex: MAX_VARTEX,
+      colors: COLORS,
+      emotions: EMOTIONS,
+      connecting: false,
+      isMeasure: false,
+      contents: [
+        "attention",
+        "meditation",
+        "pNN",
+        "BPM",
+        "EEG",
+        "table"
+      ],
+      graphDatasets: {
+        attention: [],
+        meditation: [],
+        pNN: [],
+        BPM: [],
+        EEG: []
+      },
+      latestValue: {
+        attention: 0,
+        meditation: 0,
+        pNN: 0,
+        BPM: 0,
+        EEG: 0,
+        classification: {
+          emotion: "",
+          strength: 0
+        }
+      },
+      canvas: {
+        attention: null,
+        meditation: null,
+        pNN: null,
+        BPM: null,
+        EEG: null,
+      },
+      eegBuf: {
+        attention: null,
+        meditation: null
+      },
+      order: [],
+      tableOrder: [],
+      header: null,
+      XMLroot: [],
+      socket: null,
+      sortable: null,
+    },
+    watch: {
+      "graphDatasets.attention": function () {
+        this.canvas.attention.data.datasets[0].data = this.graphDatasets.attention;
+        this.canvas.attention.data.labels = Array(this.graphDatasets.attention.length).fill('');
+        this.canvas.attention.update();
+        this.calEEGValue("attention");
+      },
+      "graphDatasets.meditation": function () {
+        this.canvas.meditation.data.datasets[0].data = this.graphDatasets.meditation;
+        this.canvas.meditation.data.labels = Array(this.graphDatasets.meditation.length).fill('');
+        this.canvas.meditation.update();
+        this.calEEGValue("meditation");
+      },
+      "graphDatasets.pNN": function () {
+        this.canvas.pNN.data.datasets[0].data = this.graphDatasets.pNN;
+        this.canvas.pNN.data.labels = Array(this.graphDatasets.pNN.length).fill('');
+        this.canvas.pNN.update();
+      },
+      "graphDatasets.BPM": function () {
+        this.canvas.BPM.data.datasets[0].data = this.graphDatasets.BPM;
+        this.canvas.BPM.data.labels = Array(this.graphDatasets.BPM.length).fill('');
+        this.canvas.BPM.update();
+      },
+      "graphDatasets.EEG": function () {
+        this.canvas.EEG.data.datasets[0].data = this.graphDatasets.EEG;
+        this.canvas.EEG.data.labels = Array(this.graphDatasets.EEG.length).fill('');
+        this.canvas.EEG.update();
+      },
+    },
+    mounted() {
+      this.initHeader();
+      this.createCharts();
+      this.connectWs();
+    },
+    methods: {
+      initHeader() {
+        this.header = document.getElementById("header");
+        this.header.style.backgroundColor = "#1abc9c";
+      },
+      createCharts() {
+        const vm = this;
+        vm.chart("attention", vm.colors.attention);
+        vm.chart("meditation", vm.colors.meditation);
+        vm.chart("pNN", vm.colors.pNN);
+        vm.chart("BPM", vm.colors.BPM, true, 50);
+        vm.chart("EEG", vm.colors.EEG, false);
+        vm.createTableOrder();
+        vm.order.push("table");
+      },
+      createTableOrder() {
+        this.tableOrder = [...this.order]
+        this.tableOrder.push("classification")
+      },
+      chart(id, color, isScale = true, min = 0, max = 100) {
+        const ctx = document.getElementById(id);
+        const options = {
+          yAxes: [{
+            ticks: {
+              suggestedMin: min,
+              suggestedMax: max
+            }
+          }]
+        }
+        const scalesOption = isScale ? options : {};
+
+        this.order.push(id);
+        this.canvas[id] = new Chart(ctx, {
+          type: "line",
+          data: {
+            datasets: [{
+              label: id,
+              backgroundColor: color,
+              borderColor: color,
+              fill: false,
+              cubicInterpolationMode: "monotone",
+              pointStyle: "rectRot",
+              spanGaps: true
+            }]
+          },
+          options: {
+            legend: {
+              labels: {
+                fontSize: 14,
+              }
+            },
+            tooltips: {
+              enabled: false
+            },
+            scales: scalesOption
+          }
+        })
+      },
+      updateGraph(id, value) {
+        if (this.graphDatasets[id].length === this.maxVartex)
+          this.graphDatasets[id].shift();
+
+        this.graphDatasets[id].push(value);
+        this.latestValue[id] = Math.floor(value * 100) / 100;
+        this.updateLatestValue(id, value);
+      },
+      updateLatestValue(id, value, isClassification = false) {
+        if (isClassification) {
+          this.latestValue.classification.emotion = value.emotion;
+          this.latestValue.classification.strength = value.strength;
+        }
+        else
+          this.latestValue[id] = Math.floor(value * 100) / 100;
+      },
+      updateDatasets(id, value, timestamp, isClassification = false) {
+        lowerId = id.toLowerCase()
+        if (isClassification) {
+          this.XMLroot.push(`\t<${lowerId}\ttimestamp="${timestamp}">\r\n`);
+          this.XMLroot.push(`\t\t<emotion>${value.emotion}</emotion>\r\n`);
+          this.XMLroot.push(`\t\t<strength>${parseFloat(value.strength)}</strength>\r\n`);
+          this.XMLroot.push(`\t</${lowerId}>`);
+        }
+        else
+          this.XMLroot.push(`\t<${lowerId}\ttimestamp="${timestamp}">${value}</${lowerId}>\r\n`);
+      },
+      calEEGValue(id) {
+        const other = id === "attention" ? "meditation" : "attention";
+
+        if (this.eegBuf[id] === null)
+          this.eegBuf[id] = this.graphDatasets[id].slice(-1)[0]
+        else if (this.eegBuf[other] !== null) {
+          this.updateGraph("EEG", this.eegBuf.attention / this.eegBuf.meditation);
+          this.eegBuf.attention = this.eegBuf.meditation = null;
+        }
+      },
+      onClick() {
+        this.isMeasure = true;
+        this.header.style.backgroundColor = "#84fa24";
+        this.XMLroot.push(`<?xml\tversion="1.0"\tencoding="UTF-8"?>\r\n`);
+        this.XMLroot.push("<root>\r\n");
+      },
+      downloadXMLFile() {
+        this.isMeasure = false;
+        this.download(this.createXML());
+        this.header.style.backgroundColor = "#1abc9c";
+        this.XMLroot.length = 0;
+      },
+      createXML() {
+        this.XMLroot.push("</root>\r\n");
+        return this.XMLroot;
+      },
+      download(XMLarray) {
+        const blob = new Blob(XMLarray, {
+          type: "text/xml;charset=utf-8;"
+        });
+        const url = (window.URL || window.webkitURL).createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = FILE_NAME;
+        link.href = url;
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      },
+      connectWs(addr = "ws://" + location.hostname + ":8080/api") {
+        return new Promise((resolve, reject) => {
+          const vm = this;
+
+          if (vm.socket)
+            vm.socket.close();
+
+          this.connecting = true;
+          let timeout = setTimeout(() => {
+            this.connecting = false;
+            reject();
+          }, 10000);
+
+          vm.socket = new WebSocket(addr);
+          vm.socket.onopen = () => {
+            clearTimeout(timeout);
+            this.connecting = false;
+            console.log("[websocket] connected!");
+          }
+          vm.socket.onclose = () => {
+            console.log("[websocket] disconnected!");
+          }
+          vm.socket.onmessage = (event) => {
+            // {
+            //   "data": {
+            //     "type": "attention",
+            //     "value": "50"
+            //     "timestamp": "YYYY-MM-DDThh:mm:ss"
+            //   }
+            // }
+            const container = JSON.parse(event.data);
+
+            switch (container.type) {
+              case "attention":
+                vm.updateGraph("attention", parseFloat(container.value));
+                // console.log(`[updateGraph] attention(${container.timestamp}): ${container.value}`);
+                if (vm.isMeasure) vm.updateDatasets("attention", parseFloat(container.value), container.timestamp);
+                break;
+              case "meditation":
+                vm.updateGraph("meditation", parseFloat(container.value));
+                // console.log(`[updateGraph] meditation(${container.timestamp}): ${container.value}`);
+                if (vm.isMeasure) vm.updateDatasets("meditation", parseFloat(container.value), container.timestamp);
+                break;
+              case "pnn":
+                vm.updateGraph("pNN", parseFloat(container.value));
+                // console.log(`[updateGraph] pNN(${container.timestamp}): ${container.value}`);
+                if (vm.isMeasure) vm.updateDatasets("pNN", parseFloat(container.value), container.timestamp);
+                break;
+              case "bpm":
+                vm.updateGraph("BPM", parseFloat(container.value));
+                // console.log(`[updateGraph] BPM(${container.timestamp}): ${container.value}`);
+                if (vm.isMeasure) vm.updateDatasets("BPM", parseFloat(container.value), container.timestamp);
+                break;
+              case "classification":
+                vm.updateLatestValue("classification", container.value, true);
+                // console.log(`[updateGraph] classification(${container.timestamp}): ${container.value}`);
+                if (vm.isMeasure) vm.updateDatasets("classification", container.value, container.timestamp, true);
+                break;
+              default:
+                console.log(`[:thinking_face:] data: ${container}`);
+            }
+          }
+        })
+      }
+    },
+  })
+</script>
+</html>

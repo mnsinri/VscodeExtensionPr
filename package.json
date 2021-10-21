@@ -1,6 +1,6 @@
 {
 	"name": "test-extension",
-	"displayName": "test-extension",
+	"displayName": "testExtension",
 	"description": "",
 	"version": "0.0.1",
 	"engines": {
@@ -10,14 +10,15 @@
 		"Other"
 	],
 	"activationEvents": [
-		"onCommand:test-extension.helloWorld"
+		"onCommand:testExtension.webview",
+		"onWebviewPanel:testWebview"
 	],
 	"main": "./out/extension.js",
 	"contributes": {
 		"commands": [
 			{
-				"command": "test-extension.helloWorld",
-				"title": "Hello World"
+				"command": "testExtension.webview",
+				"title": "Webview Test"
 			}
 		]
 	},
