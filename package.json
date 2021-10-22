@@ -10,7 +10,7 @@
 		"Other"
 	],
 	"activationEvents": [
-		"onCommand:testExtension.webview",
+		"*",
 		"onWebviewPanel:testWebview"
 	],
 	"main": "./out/extension.js",
@@ -18,7 +18,11 @@
 		"commands": [
 			{
 				"command": "testExtension.webview",
-				"title": "Webview Test"
+				"title": "Open ++Okimoti"
+			},
+			{
+				"command": "testExtension.judge",
+				"title": "Judge Code"
 			}
 		]
 	},
